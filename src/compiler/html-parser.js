@@ -49,6 +49,9 @@ export function parse (html) {
   return root
 }
 
+// 将属性的对象数组转化为对象
+// input: [{name: key1, value: value1}, {name: key2, value: value2}]
+// output: {key1: value1, key2: value2}
 function makeAttrsMap (attrs) {
   const map = {}
   for (let i = 0, l = attrs.length; i < l; i++) {
@@ -90,67 +93,102 @@ function makeMap(values) {
 
 // Regular Expressions for parsing tags and attributes
 // 标签和属性的正则表达式
- 
-// 属性标识符  空格,",',<,>,/,=
+
+// 属性标识符
+// []中的^代表取反，所以这里是一个匹配所有【不是】空白和操作符的pattern
 var singleAttrIdentifier = /([^\s"'<>\/=]+)/,
 // 赋值符
     singleAttrAssign = /=/,
+// [/=/] ????
     singleAttrAssigns = [singleAttrAssign],
 // reg.source => 正则表达式的文本（//里面的部分）
-
     singleAttrValues = [
+// 要匹配()的话需要加\来转义，所以这里括号起到的是一个子pattern的作用
+// 括号内：任意多个(>=0)[^"]非双引号的字符
+// 即一个匹配双引号的模式
       // attr value double quotes
       /"([^"]*)"+/.source,
+// 同上，匹配单引号
       // attr value, single quotes
       /'([^']*)'+/.source,
+// 同singleAttrIdentifier，所有非空白和操作符的内容
       // attr value, no quotes
       /([^\s"'=<>`]+)/.source
     ],
     qnameCapture = (function() {
       // could use https://www.w3.org/TR/1999/REC-xml-names-19990114/#NT-QName
       // but for Vue templates we can enforce a simple charset
+      // 变量名必须以字母或下划线开头，后面可以跟任意多个字符（包括0-9）、-、.（隶属于对象）
       var ncname = '[a-zA-Z_][\\w\\-\\.]*'
+      // ((?:[a-zA-z_][\w\-\.]\:)?[a-zA-z_][\w\-\.])
+      // 所以就是匹配变量名，如果是name1:name2的形式的话，只获取后面的那个name2
       return '((?:' + ncname + '\\:)?' + ncname + ')'
     })(),
+    // 匹配起始标签的<tag
     startTagOpen = new RegExp('^<' + qnameCapture),
+    // 匹配起始标签的>，前面可以有空白。也可以是/>，这种情况应该是<img src="xxx" />的形式。不会因为/而匹配到闭合标签，因为闭合标签是</xxx>的形式，/和>中间是有字符的
     startTagClose = /^\s*(\/?)>/,
+    // ^<\/name[^>]*>  
+    // </name>，>之前不能有其他的>
     endTag = new RegExp('^<\\/' + qnameCapture + '[^>]*>'),
+    // <!DOCTYPE 开头，加上多于一个非>的字符，加上>
     doctype = /^<!DOCTYPE [^>]+>/i
 
+
 var IS_REGEX_CAPTURING_BROKEN = false
+// replace的第二个参数接受一个replacer函数
+// replacer(match, p1, p2,..., offset, string)
+// match: 匹配的子字符串
+// p1, p2: 正则表达式中第n个括号匹配到的字符串
+// offset： 匹配的子字符串在父字符串中的偏移位置
+// string：原字符串
+// 对于replace来说，若第一个单数是正则表达式且有g参数，则每次替换都会调用replacer函数
 'x'.replace(/x(.)?/g, function(m, g) {
   IS_REGEX_CAPTURING_BROKEN = g === ''
 })
 
 // Empty Elements
+// 空元素检测函数
 var empty = makeMap('area,base,basefont,br,col,embed,frame,hr,img,input,isindex,keygen,link,meta,param,source,track,wbr')
 
 // Inline Elements
+// 内联元素
 var inline = makeMap('a,abbr,acronym,applet,b,basefont,bdo,big,br,button,cite,code,del,dfn,em,font,i,iframe,img,input,ins,kbd,label,map,noscript,object,q,s,samp,script,select,small,span,strike,strong,sub,sup,svg,textarea,tt,u,var')
 
 // Elements that you can, intentionally, leave open
 // (and which close themselves)
+// 可以不闭合的元素
 var closeSelf = makeMap('colgroup,dd,dt,li,options,p,td,tfoot,th,thead,tr,source')
 
 // Attributes that have their values filled in disabled='disabled'
+// 不需要进行赋值操作的属性
 var fillAttrs = makeMap('checked,compact,declare,defer,disabled,ismap,multiple,nohref,noresize,noshade,nowrap,readonly,selected')
 
 // Special Elements (can contain anything)
+// 特殊元素
 var special = makeMap('script,style')
 
 // HTML5 tags https://html.spec.whatwg.org/multipage/indices.html#elements-3
 // Phrasing Content https://html.spec.whatwg.org/multipage/dom.html#phrasing-content
+// 非短语元素
+// 短语元素：能被放在一个段落中的元素，如<a>、<img>等
+// 而<article><h1><h2>这些不能被放在一个段落中，就不是短语元素
 var nonPhrasing = makeMap('address,article,aside,base,blockquote,body,caption,col,colgroup,dd,details,dialog,div,dl,dt,fieldset,figcaption,figure,footer,form,h1,h2,h3,h4,h5,h6,head,header,hgroup,hr,html,legend,li,menuitem,meta,optgroup,option,param,rp,rt,source,style,summary,tbody,td,tfoot,th,thead,title,tr,track')
 
 var reCache = {}
 
 function attrForHandler(handler) {
+  // ^\s*([^\s"'<>\/=]+)(?:\s*((?:=))\s*( ?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+) )?
+  //     标识符                  赋值符                 值：("" | '' | 字符)
+  // 开头可以有空白，匹配  标识符=值  的形式，(参数)可以没有，捕获标识符
   var pattern = singleAttrIdentifier.source +
                 '(?:\\s*(' + joinSingleAttrAssigns(handler) + ')' +
                 '\\s*(?:' + singleAttrValues.join('|') + '))?'
   return new RegExp('^\\s*' + pattern)
 }
 
+// 整合赋值符的正则表达式
+// 然而这个handler有啥用。。。
 function joinSingleAttrAssigns(handler) {
   return singleAttrAssigns.map(function(assign) {
     return '(?:' + assign.source + ')'
@@ -159,22 +197,30 @@ function joinSingleAttrAssigns(handler) {
 
 export default function HTMLParser(html, handler) {
   var stack = [], lastTag
+  // 不知道handler到底是干嘛的...反正attribute是个key=value的匹配模式
   var attribute = attrForHandler(handler)
   var last, prevTag, nextTag
   while (html) {
     last = html
     // Make sure we're not in a script or style element
     if (!lastTag || !special(lastTag)) {
+      // 找到<的位置
       var textEnd = html.indexOf('<')
+      // 如果<在0处，说明此处是某个元素的开始
       if (textEnd === 0) {
+        // 处理注释的情况
         // Comment:
+        // 若以<!--开头，说明是注释
         if (/^<!--/.test(html)) {
+          // 找到注释的末端位置
           var commentEnd = html.indexOf('-->')
 
           if (commentEnd >= 0) {
+            // 不明白handler到底是什么...
             if (handler.comment) {
               handler.comment(html.substring(4, commentEnd))
             }
+            // 从html中去掉注释的部分，重新开始循环
             html = html.substring(commentEnd + 3)
             prevTag = ''
             continue
@@ -182,6 +228,8 @@ export default function HTMLParser(html, handler) {
         }
 
         // http://en.wikipedia.org/wiki/Conditional_comment#Downlevel-revealed_conditional_comment
+        // 处理<![if IE]>等情况
+        // 类似上面的处理注释，直接去掉
         if (/^<!\[/.test(html)) {
           var conditionalEnd = html.indexOf(']>')
 
@@ -196,6 +244,9 @@ export default function HTMLParser(html, handler) {
         }
 
         // Doctype:
+        // 处理doctype
+        // string.match()会返回所有对应的匹配结果，如果没有就是null
+        // 所以如果当前<属于doctype的话就会进入判断，从html中去掉doctype
         var doctypeMatch = html.match(doctype)
         if (doctypeMatch) {
           if (handler.doctype) {
@@ -207,15 +258,23 @@ export default function HTMLParser(html, handler) {
         }
 
         // End tag:
+        // 如果当前<的字符串是个闭合标签
+        // 这里这个endTagMatch如果存在，那么会是一个数组，数组第一位存储endTag的匹配结果，第二位存储endTag中的子捕获组的存储结果
+        // 要注意的是这个子捕获组并不是(?:ncname\:)的结果，而是((?:ncname\:)?ncname)的匹配结果，原因是()是一个真正的子捕获组，而(?:)只会进行匹配不会进行捕获
+        // 如</span>进行match操作，得到的结果是
+        // ["</span>", "span"]
         var endTagMatch = html.match(endTag)
         if (endTagMatch) {
+          // 首先从html中去掉
           html = html.substring(endTagMatch[0].length)
+          // 将endTag进行转换,并parse
           endTagMatch[0].replace(endTag, parseEndTag)
           prevTag = '/' + endTagMatch[1].toLowerCase()
           continue
         }
 
         // Start tag:
+        // 剩余情况便是起始标签，进行parse
         var startTagMatch = parseStartTag(html)
         if (startTagMatch) {
           html = startTagMatch.rest
@@ -226,25 +285,32 @@ export default function HTMLParser(html, handler) {
       }
 
       var text
+      // 若<存在且并不在开始处，说明现在要处理的是plain text
       if (textEnd >= 0) {
+        // 把plain text截取出来
         text = html.substring(0, textEnd)
         html = html.substring(textEnd)
       }
       else {
+      // 如果<不存在，说明已经没有标签了，html全都是plain text
         text = html
         html = ''
       }
 
       // next tag
+      // 寻找下一个起始标签
       var nextTagMatch = parseStartTag(html)
       if (nextTagMatch) {
         nextTag = nextTagMatch.tagName
       }
+      // 如果没有找到
       else {
+        // 寻找是否存在下一个闭合标签
         nextTagMatch = html.match(endTag)
         if (nextTagMatch) {
           nextTag = '/' + nextTagMatch[1]
         }
+        // 如果没有找到，nextTag为空
         else {
           nextTag = ''
         }
@@ -256,12 +322,18 @@ export default function HTMLParser(html, handler) {
       prevTag = ''
 
     }
+    // 如果现在在特殊标签中
     else {
       var stackedTag = lastTag.toLowerCase()
+      // /([\s\S]*?)</stackTag[^>]*>/i
+      // ?跟在重复修饰符后面代表非贪心量化，会尽可能少的进行匹配
+      // 也就是说这个的子捕获组会捕获闭合标签的前一个字符？...
+
       var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)</' + stackedTag + '[^>]*>', 'i'))
 
       html = html.replace(reStackedTag, function(all, text) {
         if (stackedTag !== 'script' && stackedTag !== 'style' && stackedTag !== 'noscript') {
+          // 你在抓梦jo啊，不是只有lastTag存在且lastTag为spceial tag的时候才会进来这里的吗？？？
           text = text
             .replace(/<!--([\s\S]*?)-->/g, '$1')
             .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
@@ -288,12 +360,15 @@ export default function HTMLParser(html, handler) {
   }
 
   function parseStartTag(input) {
+    // ^<((?:[a-zA-z_][\w\-\.]\:)?[a-zA-z_][\w\-\.])
+    // 捕获结果为<tag，子捕获组结果为tag
     var start = input.match(startTagOpen)
     if (start) {
       var match = {
         tagName: start[1],
         attrs: []
       }
+      // 截出<tag
       input = input.slice(start[0].length)
       var end, attr
       while (!(end = input.match(startTagClose)) && (attr = input.match(attribute))) {
