@@ -11,8 +11,10 @@ export function parse (html) {
   let root
   let currentParent
   let stack = []
+  // function HTMLParser(html, handler)
   HTMLParser(html, {
     html5: true,
+    // 遇到起始标签时创建元素
     start (tag, attrs, unary) {
       let element = {
         tag,
@@ -21,31 +23,41 @@ export function parse (html) {
         parent: currentParent,
         children: []
       }
+      // 如果没有根节点，这个元素就是根节点
       if (!root) {
         root = element
       }
+      // 如果当前有父元素，就放入父元素中
       if (currentParent) {
         currentParent.children.push(element)
       }
+      // 如果不是一元标签，说明其下是可能存在子节点的，放在栈顶
+      // 如果是一元标签，其下不会有子节点
       if (!unary) {
         currentParent = element
         stack.push(element)
       }
     },
     end () {
+      // 标签闭合，将栈顶元素弹出，后续操作将在下一个元素上进行
       stack.length -= 1
       currentParent = stack[stack.length - 1]
     },
     chars (text) {
+      // 对plain text进行处理，如果text在pre标签下，就直接返回text。
+      // 如果text没用实质字符，就留空
       text = currentParent.tag === 'pre'
         ? text
         : text.trim() ? text : ' '
+      // 处理完之后放入当前父节点
       currentParent.children.push(text)
     },
     comment () {
+      // 是否保留注释
       // noop
     }
   })
+  // 返回根节点
   return root
 }
 
@@ -216,8 +228,8 @@ export default function HTMLParser(html, handler) {
           var commentEnd = html.indexOf('-->')
 
           if (commentEnd >= 0) {
-            // 不明白handler到底是什么...
             if (handler.comment) {
+              // 如果handler存在对注释的配置选项就进行配置
               handler.comment(html.substring(4, commentEnd))
             }
             // 从html中去掉注释的部分，重新开始循环
@@ -277,7 +289,9 @@ export default function HTMLParser(html, handler) {
         // 剩余情况便是起始标签，进行parse
         var startTagMatch = parseStartTag(html)
         if (startTagMatch) {
+          // 去掉起始标签
           html = startTagMatch.rest
+          // 对起始标签的数据进行处理
           handleStartTag(startTagMatch)
           prevTag = startTagMatch.tagName.toLowerCase()
           continue
@@ -371,10 +385,12 @@ export default function HTMLParser(html, handler) {
       // 截出<tag
       input = input.slice(start[0].length)
       var end, attr
+      // 当前并非>且匹配属性时，存储属性继续循环，直到当前为>或不匹配属性
       while (!(end = input.match(startTagClose)) && (attr = input.match(attribute))) {
         input = input.slice(attr[0].length)
         match.attrs.push(attr)
       }
+      // startTagClose的$1为/>中的/，如果存在就会存入match的unarySlash属性，将截掉>的剩余部分存入match的rest
       if (end) {
         match.unarySlash = end[1]
         match.rest = input.slice(end[0].length)
@@ -384,6 +400,7 @@ export default function HTMLParser(html, handler) {
   }
 
   function handleStartTag(match) {
+    // 对startTag进行拆解，将结果放入stack
     var tagName = match.tagName
     var unarySlash = match.unarySlash
 
@@ -401,8 +418,16 @@ export default function HTMLParser(html, handler) {
       parseEndTag('', tagName)
     }
 
+    // 是否为一元？
     var unary = empty(tagName) || tagName === 'html' && lastTag === 'head' || !!unarySlash
 
+    // ^\s*([^\s"'<>\/=]+)(?:\s*((?:=))\s*( ?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+) )?
+    // $0 整个匹配属性
+    // $1 key
+    // $2 =
+    // $3 "value"
+    // $4 'value'
+    // $5 value
     var attrs = match.attrs.map(function(args) {
       // hackish work around FF bug https://bugzilla.mozilla.org/show_bug.cgi?id=369778
       if (IS_REGEX_CAPTURING_BROKEN && args[0].indexOf('""') === -1) {
@@ -412,10 +437,14 @@ export default function HTMLParser(html, handler) {
       }
       return {
         name: args[1],
+        // 通常来说值应当是被引号包裹的
+        // 如果没有被引号包裹，应当属于fillattr，即checked = checked
+        // 其他情况说明值不合法，value为空
         value: args[3] || args[4] || (args[5] && fillAttrs(args[5]) ? name : '')
       }
     })
 
+    // 将tag和attrs放入stack用
     if (!unary) {
       stack.push({ tag: tagName, attrs: attrs })
       lastTag = tagName
@@ -427,10 +456,12 @@ export default function HTMLParser(html, handler) {
     }
   }
 
+  // 这个应该是配合handler进行配置的？
   function parseEndTag(tag, tagName) {
     var pos
 
     // Find the closest opened tag of the same type
+    // 从stack中找到一样的tag
     if (tagName) {
       var needle = tagName.toLowerCase()
       for (pos = stack.length - 1; pos >= 0; pos--) {
