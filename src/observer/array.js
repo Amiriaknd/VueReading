@@ -1,3 +1,4 @@
+// 重写数组方法，使得可以检测到数组变动
 import { def } from '../util/index'
 
 const arrayProto = Array.prototype
@@ -22,12 +23,14 @@ export const arrayMethods = Object.create(arrayProto)
   def(arrayMethods, method, function mutator () {
     // avoid leaking arguments:
     // http://jsperf.com/closure-with-arguments
+    // 先调用原生的方法执行，保存结果到result
     var i = arguments.length
     var args = new Array(i)
     while (i--) {
       args[i] = arguments[i]
     }
     var result = original.apply(this, args)
+    // TODO ob
     var ob = this.__ob__
     var inserted
     switch (method) {

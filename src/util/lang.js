@@ -1,3 +1,4 @@
+// 基础类型对象
 export function isPrimitive (s) {
   return typeof s === 'string' || typeof s === 'number'
 }
@@ -310,7 +311,7 @@ export const isArray = Array.isArray
  * @param {*} val
  * @param {Boolean} [enumerable]
  */
-
+// 为obj定义一个key属性，值为val
 export function def (obj, key, val, enumerable) {
   Object.defineProperty(obj, key, {
     value: val,

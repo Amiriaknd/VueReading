@@ -10,6 +10,9 @@ function addNS(data, children) {
   }
 }
 
+// tag: tagname
+// b: data或children nodes
+// c: children nodes
 export default function h (tag, b, c) {
   var data = {}, children, text, i
   if (arguments.length === 3) {
@@ -21,6 +24,7 @@ export default function h (tag, b, c) {
     else if (isPrimitive(b)) { text = b }
     else { data = b }
   }
+  // 如果children不是array，说明根本没有被赋值
   if (isArray(children)) {
     for (i = 0; i < children.length; ++i) {
       if (isPrimitive(children[i])) children[i] = VNode(undefined, undefined, undefined, children[i])

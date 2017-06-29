@@ -6,6 +6,7 @@
  */
 
 // 将HTML转换为AST对象
+// AST  Abstract Syntax Tree
 
 export function parse (html) {
   let root
@@ -298,6 +299,10 @@ export default function HTMLParser(html, handler) {
         }
       }
 
+
+      // 以上，当前位置是<的情况解析完了，如果有以上的情况会直接进入循环
+      // 这里处理文本情况
+
       var text
       // 若<存在且并不在开始处，说明现在要处理的是plain text
       if (textEnd >= 0) {
@@ -311,8 +316,9 @@ export default function HTMLParser(html, handler) {
         html = ''
       }
 
+      // 给出夹在文本前后的标签，帮助处理文本。prevtag在前面的分析的时候已经给过了，这里找nexttag
       // next tag
-      // 寻找下一个起始标签
+      // 寻找下一个标签
       var nextTagMatch = parseStartTag(html)
       if (nextTagMatch) {
         nextTag = nextTagMatch.tagName
@@ -330,6 +336,7 @@ export default function HTMLParser(html, handler) {
         }
       }
 
+      // 处理文本
       if (handler.chars) {
         handler.chars(text, prevTag, nextTag)
       }
@@ -347,7 +354,6 @@ export default function HTMLParser(html, handler) {
 
       html = html.replace(reStackedTag, function(all, text) {
         if (stackedTag !== 'script' && stackedTag !== 'style' && stackedTag !== 'noscript') {
-          // 你在抓梦jo啊，不是只有lastTag存在且lastTag为spceial tag的时候才会进来这里的吗？？？
           text = text
             .replace(/<!--([\s\S]*?)-->/g, '$1')
             .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
@@ -373,6 +379,7 @@ export default function HTMLParser(html, handler) {
     parseEndTag()
   }
 
+// 匹配是否开标签，如果是的话对开标签的如标签名、属性等信息进行整合
   function parseStartTag(input) {
     // ^<((?:[a-zA-z_][\w\-\.]\:)?[a-zA-z_][\w\-\.])
     // 捕获结果为<tag，子捕获组结果为tag
@@ -399,26 +406,30 @@ export default function HTMLParser(html, handler) {
     }
   }
 
+  // 对parseStartTag的结果进行处理
   function handleStartTag(match) {
     // 对startTag进行拆解，将结果放入stack
     var tagName = match.tagName
     var unarySlash = match.unarySlash
 
+    // h5模式下，如果当前的标签不是一个可以被放在段落中嵌套的标签，且上个标签为开标签p，那么说明上一个p是漏掉了闭合标签，闭合它
     if (handler.html5 && lastTag === 'p' && nonPhrasing(tagName)) {
       parseEndTag('', lastTag)
     }
 
+    // 非h5模式下，若上个标签是个内联标签，闭合它（因为非h5内联元素不能嵌套其他元素？...）
     if (!handler.html5) {
       while (lastTag && inline(lastTag)) {
         parseEndTag('', lastTag)
       }
     }
 
+    // 如果是个自闭合标签就闭合它
     if (closeSelf(tagName) && lastTag === tagName) {
       parseEndTag('', tagName)
     }
 
-    // 是否为一元？
+    // 空元素,html和head元素,以及带有反斜线的一元标签不需要放入stack中
     var unary = empty(tagName) || tagName === 'html' && lastTag === 'head' || !!unarySlash
 
     // ^\s*([^\s"'<>\/=]+)(?:\s*((?:=))\s*( ?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+) )?
@@ -428,6 +439,7 @@ export default function HTMLParser(html, handler) {
     // $3 "value"
     // $4 'value'
     // $5 value
+    // 遍历属性
     var attrs = match.attrs.map(function(args) {
       // hackish work around FF bug https://bugzilla.mozilla.org/show_bug.cgi?id=369778
       if (IS_REGEX_CAPTURING_BROKEN && args[0].indexOf('""') === -1) {
@@ -437,31 +449,29 @@ export default function HTMLParser(html, handler) {
       }
       return {
         name: args[1],
-        // 通常来说值应当是被引号包裹的
-        // 如果没有被引号包裹，应当属于fillattr，即checked = checked
-        // 其他情况说明值不合法，value为空
+        //  "value"  'value'  value或空字符串
         value: args[3] || args[4] || (args[5] && fillAttrs(args[5]) ? name : '')
       }
     })
 
-    // 将tag和attrs放入stack用
+    // 将tag和attrs放入stack中
     if (!unary) {
       stack.push({ tag: tagName, attrs: attrs })
       lastTag = tagName
       unarySlash = ''
     }
-
+    // 调用handler进行处理
     if (handler.start) {
       handler.start(tagName, attrs, unary, unarySlash)
     }
   }
 
-  // 这个应该是配合handler进行配置的？
+
   function parseEndTag(tag, tagName) {
     var pos
 
     // Find the closest opened tag of the same type
-    // 从stack中找到一样的tag
+    // 先从stack中找到tagname的开标签
     if (tagName) {
       var needle = tagName.toLowerCase()
       for (pos = stack.length - 1; pos >= 0; pos--) {
@@ -470,12 +480,14 @@ export default function HTMLParser(html, handler) {
         }
       }
     }
+    // 如果没有提供tagname,就闭合所有stack中的标签
     // If no tag name is provided, clean shop
     else {
       pos = 0
     }
 
     if (pos >= 0) {
+      // pos是stack中元素的开标签位置,关闭所有从当前比标签到开标签中间的所有标签
       // Close all the open elements, up the stack
       for (var i = stack.length - 1; i >= pos; i--) {
         if (handler.end) {
@@ -484,6 +496,7 @@ export default function HTMLParser(html, handler) {
       }
 
       // Remove the open elements from the stack
+      // 将已经闭合的标签从stack中移除,重置lastTag
       stack.length = pos
       lastTag = pos && stack[pos - 1].tag
     }

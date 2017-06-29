@@ -15,7 +15,7 @@ export function compile (html) {
   html = html.trim()
   // 倘若是第一次编译html，hit会是undefined，会执行generate进行编译并保存进cache
   // 若hit存在，说明已经编译过了，直接复用
-  // 先解析html然后对解析结果进行生成？
+  // 保存的值是一个函数，函数会返回渲染html需要的信息
   const hit = cache[html]
   return hit || (cache[html] = generate(parse(html)))
 }

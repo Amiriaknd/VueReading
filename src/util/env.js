@@ -1,6 +1,7 @@
 /* global MutationObserver */
 
 // can we use __proto__?
+// 是否可以使用__proto__
 export const hasProto = '__proto__' in {}
 
 // Browser environment sniffing

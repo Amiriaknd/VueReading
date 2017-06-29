@@ -18,7 +18,7 @@ export default class Component {
 
     // 初始化el的HTML内容
     this._el.innerHTML = ''
-    // 遍历data选项，对每个选项执行_.proxy()
+    // 遍历data选项，将data的属性加入this._data中
     Object.keys(options.data).forEach(key => this._proxy(key))
     // 如果methods选项存在，就遍历methods，将method: fn绑定到this上，this[method] = fn.bind(this)
     if (options.methods) {
@@ -26,7 +26,7 @@ export default class Component {
         this[key] = options.methods[key].bind(this)
       })
     }
-    // 应该是监视data改动？
+    // observe option的data，返回的observer对象给_ob
     this._ob = observe(options.data)
     // 比较懵比，搁置
     this._watchers = []
@@ -43,6 +43,11 @@ export default class Component {
     this._tree = vtree
   }
 
+// 接受动态class和静态class
+// 不知道第一版的vue中的:class标准是怎样的
+// 从这里看的话好像是只接受Object？
+// 如果dynamic是对象的话会返回所有值为true的key，对比{'red': isRed}，没问题。（不过这样是不会动态刷新的吧？）
+// 如果dynamic是数组的话返回的就是"0 1 2"这样的索引了啊喂没问题吗
   _renderClass (dynamic, cls) {
     dynamic = dynamic
       ? typeof dynamic === 'string'
@@ -54,6 +59,9 @@ export default class Component {
       : dynamic
   }
 
+// 展开数组，只展开到第二层，不过似乎够用了？
+// 因为子节点如果有children，那么这个chidlren一定也会调用flatten，也就是说children一定是一个一元数组
+// 因此只要展开两层就够用了
   __flatten__ (arr) {
     var res = []
     for (var i = 0, l = arr.length; i < l; i++) {
@@ -71,7 +79,9 @@ export default class Component {
     return res
   }
 
+// 将key加入this._data对象中
   _proxy (key) {
+    // isReserved 是否以_或$开头
     if (!isReserved(key)) {
       // need to store ref to self here
       // because these getter/setters might
